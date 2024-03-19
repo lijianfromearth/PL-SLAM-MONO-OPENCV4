@@ -189,7 +189,8 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeSt
 }
 
 
-/// 单目初始化建立frame
+// 单目初始化建立frame 提取帧的点线特征。点特征小于100时提取线特征
+
 Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* orbextractor,LINEextractor* lsdextractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, const cv::Mat &mask)
     :mpORBvocabulary(voc),mpORBextractorLeft(orbextractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)), mpLSDextractorLeft(lsdextractor), 
      mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth)
@@ -217,35 +218,48 @@ Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* orbex
     mvLevelSigma2Line = mpLSDextractorLeft->GetScaleSigmaSquares();
     mvInvLevelSigma2Line = mpLSDextractorLeft->GetInverseScaleSigmaSquares();
 
-    cv::Mat mUndistX, mUndistY, mImGray_remap;
-    initUndistortRectifyMap(mK, mDistCoef, Mat_<double>::eye(3,3), mK, Size(imGray.cols, imGray.rows), CV_32F, mUndistX, mUndistY);
-    cv::remap(imGray, mImGray_remap, mUndistX, mUndistY, cv::INTER_LINEAR);
-
+   // ORB extraction
     thread threadPoint(&Frame::ExtractORB, this, 0, imGray);
-    //线特征修改
-    thread threadLine(&Frame::ExtractLSD, this, mImGray_remap, mask);
     threadPoint.join();
-    threadLine.join();
 
-    NL = mvKeylinesUn.size(); //特征线的数量
     N = mvKeys.size();
 
-    if(mvKeys.empty())
+    if(N<=100 ){
+    //线特征 extraction
+        thread threadLine(&Frame::ExtractLSD, this, imGray, mask);
+        threadLine.join();
+    }
+    NL = mvKeylinesUn.size(); //特征线的数量
+
+    //cout<<"特征线的数量 "<<NL<<endl;
+
+    if(mvKeys.empty() && mvKeylinesUn.empty())
         return;
-        
-    //mvKeysUn = mvKeys;
+
     UndistortKeyPoints();
+    int mt_j=mvKeysandLineUn.size();
+//将特征点和特征线的起始点放到一起用于在纹理稀少的时初始化位姿
+    mvKeysandLineUn = mvKeys;//clone 是浅拷贝
+    for(int i=0;i<NL;i++){
+        cv::Point2f lineSp(mvKeylinesUn[i].startPointX,mvKeylinesUn[i].startPointY);
+        cv::Point2f lineEp(mvKeylinesUn[i].endPointX,mvKeylinesUn[i].endPointY);
+        mvKeysandLineUn.push_back(KeyPoint(lineSp,1));
+        mvLine2point.push_back(mt_j);
+        mt_j++;
+        mvKeysandLineUn.push_back(KeyPoint(lineEp,1));
+        mt_j++;
+    }
 
     // Set no stereo information
     mvuRight = vector<float>(N,-1);
     mvDepth = vector<float>(N,-1);
 
-    mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(NULL));   // 初始化N个MapPoint，且都为NULL
-    mvbOutlier = vector<bool>(N,false);     // 初始化每个特征点都不是外点
+    mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(NULL));
+    mvbOutlier = vector<bool>(N,false);
 
     mvpMapLines = vector<MapLine*>(NL,static_cast<MapLine*>(NULL));
-    mvbLineOutlier = vector<bool>(NL,false);
-
+    mvbLineOutlier = vector<bool>(NL,false);                       // 初始化每个特征都不是外点
+    
     // This is done only for the first Frame (or after a change in the calibration)
     if(mbInitialComputations)
     {
@@ -266,14 +280,13 @@ Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* orbex
 
     mb = mbf/fx;
 
-    //AssignFeaturesToGrid();
-    //AssignFeaturesToGridForLine();
-
     thread threadAssignPoint(&Frame::AssignFeaturesToGrid, this);
-    //线特征修改
-    thread threadAssignLine(&Frame::AssignFeaturesToGridForLine, this);
     threadAssignPoint.join();
-    threadAssignLine.join();
+    //线特征修改
+    if(NL > 0){
+        thread threadAssignLine(&Frame::AssignFeaturesToGridForLine, this);
+        threadAssignLine.join();
+    }
 
 }
 
@@ -297,7 +310,7 @@ void Frame::AssignFeaturesToGrid()
 
 void Frame::AssignFeaturesToGridForLine()
 {
-    int nReserve = 0.5f*NL/(FRAME_GRID_COLS*FRAME_GRID_ROWS);
+    int nReserve = 0.5f*NL/(FRAME_GRID_COLS*FRAME_GRID_ROWS);//为每一个格子确定预分配内存大小
     for(unsigned int i=0; i<FRAME_GRID_COLS;i++)
         for (unsigned int j=0; j<FRAME_GRID_ROWS;j++)
             mGridForLine[i][j].reserve(nReserve);

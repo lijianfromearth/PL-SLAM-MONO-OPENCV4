@@ -114,6 +114,8 @@ private:
     vector<Vector3d> mvKeyLineFunctions1;
     vector<KeyLine> mvKeyLines2;
     vector<Vector3d> mvKeyLineFunctions2;
+    vector<int> mvKeyLines12point;
+    vector<int> mvKeyLines22point;
     // 从参考帧到当前帧的线匹配对
     vector<Match> mvLineMatches12;
     // 记录reference frame的每个线特征在Current frame中是否有匹配对

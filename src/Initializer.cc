@@ -36,10 +36,11 @@ Initializer::Initializer(const Frame &ReferenceFrame, float sigma, int iteration
 {
     mK = ReferenceFrame.mK.clone();
 
-    mvKeys1 = ReferenceFrame.mvKeysUn;
-
-    mvKeyLines1 = ReferenceFrame.mvKeylinesUn;  //自己添加的，传递线特征
+    //mvKeys1 = ReferenceFrame.mvKeysUn;mvKeysandLineUn
+    mvKeys1 = ReferenceFrame.mvKeysandLineUn;
+    mvKeyLines1 = ReferenceFrame.mvKeylinesUn;  //自己添加的R，传递线特征
     mvKeyLineFunctions1 = ReferenceFrame.mvKeyLineFunctions;    //自己添加的，传递线特征所在直线方程系数
+    mvKeyLines12point = ReferenceFrame.mvLine2point;
 
     mSigma = sigma;
     mSigma2 = sigma*sigma;
@@ -155,7 +156,7 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
 {
     // Fill structures with current keypoints and matches with reference frame
     // Reference Frame: 1, Current Frame: 2
-    mvKeys2 = CurrentFrame.mvKeysUn;
+    mvKeys2 = CurrentFrame.mvKeysandLineUn;
 
     mvMatches12.clear();
     mvMatches12.reserve(mvKeys2.size());
@@ -170,6 +171,48 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
             mvbMatched1[i] = true;
         } else{
             mvbMatched1[i] = false;
+        }
+    }
+
+// mvMatches12 加入线特征的匹配点的端点 用于位姿估计
+// Fill structures with current keylines and matches with reference frame
+    // Reference Frame: 1, Current Frame: 2
+    mvKeyLines2 = CurrentFrame.mvKeylinesUn;
+    mvKeyLines22point = CurrentFrame.mvLine2point;
+    mvKeyLineFunctions2 = CurrentFrame.mvKeyLineFunctions;  //当前帧的线特征所在直线的集合
+    mvLineMatches12.clear();
+    mvLineMatches12.reserve(mvKeyLines2.size());
+    mvbLineMatched1.resize(mvKeyLines1.size());
+    for(size_t i=0, iend = vLineMatches12.size(); i<iend; i++)
+    {
+         if(vLineMatches12[i]>=0)
+        {
+            Match lmatch;
+//检查匹配线的方向是否一致
+//在fram中mvKeysandLineUn 包装特征线起始点为特征点，此步在fram初始化中进行
+            int x1=mvKeyLines1[i].endPointX-mvKeyLines1[i].startPointX;
+            int x2=mvKeyLines2[vLineMatches12[i]].endPointX-mvKeyLines2[vLineMatches12[i]].startPointX;
+            if(x1>0 && x2<0){
+                //方向相反，起始点和终点匹配
+                mvMatches12.push_back(make_pair(mvKeyLines12point[i],mvKeyLines22point[vLineMatches12[i]]+1));
+                mvMatches12.push_back(make_pair(mvKeyLines12point[i]+1,mvKeyLines22point[vLineMatches12[i]]));
+            }else if (x1<0 && x2>0)
+            {
+                mvMatches12.push_back(make_pair(mvKeyLines12point[i],mvKeyLines22point[vLineMatches12[i]]+1));
+                mvMatches12.push_back(make_pair(mvKeyLines12point[i]+1,mvKeyLines22point[vLineMatches12[i]]));
+            }else{
+                //方向相同
+                mvMatches12.push_back(make_pair(mvKeyLines12point[i],mvKeyLines22point[vLineMatches12[i]]));
+                mvMatches12.push_back(make_pair(mvKeyLines12point[i]+1,mvKeyLines22point[vLineMatches12[i]]+1));
+            }
+            
+            lmatch.first = i;
+            lmatch.second = vLineMatches12[i];
+            mvLineMatches12.push_back(lmatch);
+
+            mvbLineMatched1[i] = true;
+        }else{
+            mvbLineMatched1[i] = false;
         }
     }
 
@@ -229,30 +272,7 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
     // step4: 计算比例得分，选取某个模型
     float RH = SH/(SH+SF);
 
-    // Fill structures with current keylines and matches with reference frame
-    // Reference Frame: 1, Current Frame: 2
-    mvKeyLines2 = CurrentFrame.mvKeylinesUn;
-    mvKeyLineFunctions2 = CurrentFrame.mvKeyLineFunctions;  //当前帧的线特征所在直线的集合
-
-    mvLineMatches12.clear();
-    mvLineMatches12.reserve(mvKeyLines2.size());
-    mvbLineMatched1.resize(mvKeyLines1.size());
-
-    for(size_t i=0, iend = vLineMatches12.size(); i<iend; i++)
-    {
-         if(vLineMatches12[i]>=0)
-        {
-            Match lmatch;
-            lmatch.first = i;
-            lmatch.second = vLineMatches12[i];
-            mvLineMatches12.push_back(lmatch);
-
-            mvbLineMatched1[i] = true;
-        }else{
-            mvbLineMatched1[i] = false;
-        }
-    }
-
+    
     if(RH>0.40)
     {
         bool isReconstructH;

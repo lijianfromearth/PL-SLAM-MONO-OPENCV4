@@ -678,7 +678,7 @@ void Tracking::MonocularInitialization()
 
             fill(mvIniMatches.begin(),mvIniMatches.end(),-1);
             fill(mvIniLineMatches.begin(),mvIniLineMatches.end(),-1);
-            mvIniLastLineMatches = vector<int>(mCurrentFrame.mvKeys.size(), -1);
+            
 
             mbIniFirst = false;
 
@@ -689,9 +689,9 @@ void Tracking::MonocularInitialization()
     {
         // Try to initialize
         // step2：如果当前帧特征点数大于100，则得到用于单目初始化的第二帧
-        // 如果当前帧特征点太少，重新构造初始器
+        // 如果当前帧特征线数量不够，重新构造初始器
         // 因此只有连续两帧的特征点个数都大于100时，才能继续进行初始化过程
-        if((int)mCurrentFrame.mvKeys.size()<=num)
+        if((int)mCurrentFrame.mvKeys.size()<=num && (int)mCurrentFrame.mvKeylinesUn.size()<5)
         {
             delete mpInitializer;
             mpInitializer = static_cast<Initializer*>(NULL);
@@ -707,44 +707,34 @@ void Tracking::MonocularInitialization()
         ORBmatcher matcher(0.9,true);
         int nmatches = matcher.SearchForInitialization(mInitialFrame,mCurrentFrame,mvbPrevMatched,mvIniMatches,100);
 
-        LSDmatcher lmatcher;   //建立线特征之间的匹配
-        //int lineMatches = lmatcher.SerachForInitialize(mInitialFrame, mCurrentFrame, mvIniLineMatches);
-        int lineMatches = lmatcher.SearchDouble(mLastFrame, mCurrentFrame, mvIniLineMatches);
+        
 
         // Check if there are enough correspondences
         // step4：如果初始化的两帧之间的匹配点太少，重新初始化
+        LSDmatcher lmatcher;
+        int lineMatches = 0;
         if(nmatches<100)
-        {
-            delete mpInitializer;
-            mpInitializer = static_cast<Initializer*>(NULL);
-            return;
+        {   //使用线特征补充
+            if(mInitialFrame.mvKeylinesUn.empty()){
+                //重新提取线特征
+                mLastFrame.ExtractLSD(mLastFrame.ImageGray,mask);
+            }
+            if(mCurrentFrame.mvKeylinesUn.empty()){
+                mCurrentFrame.ExtractLSD(mCurrentFrame.ImageGray,mask);
+            }
+            //建立线特征之间的匹配 mvIniLineMatches 存储是1图到2图的匹配线
+            //int lineMatches = lmatcher.SerachForInitialize(mInitialFrame, mCurrentFrame, mvIniLineMatches);
+            if((int)mInitialFrame.mvKeylinesUn.size()>=5){
+                lineMatches = lmatcher.SearchDouble(mInitialFrame, mCurrentFrame, mvIniLineMatches);
+            }           
+            if(nmatches+2*lineMatches<100){
+                delete mpInitializer;
+                mpInitializer = static_cast<Initializer*>(NULL);
+                return;
+            }          
         }
 //  没读懂
-        if(!mbIniFirst)
-        {
-            mvIniLastLineMatches = mvIniLineMatches;
-            mbIniFirst = true;
-        }else{
-            for(int i = 0; i < mInitialFrame.mvKeys.size(); i++)
-            {
-                int j = mvIniLastLineMatches[i];
-                if(j >= 0 ){
-                    mvIniLastLineMatches[i] = mvIniLineMatches[j];
-                }
-            }
-
-            lmatcher.SearchDouble(mInitialFrame,mCurrentFrame, mvIniLineMatches);
-            for(int i = 0; i < mInitialFrame.mvKeys.size(); i++)
-            {
-                int j = mvIniLastLineMatches[i];
-                int k = mvIniLineMatches[i];
-                if(j != k){
-                    mvIniLastLineMatches[i] = -1;
-                }
-            }
-        }
-
-        mvIniLineMatches = mvIniLastLineMatches;
+        
 
         cv::Mat Rcw; // Current Camera Rotation
         cv::Mat tcw; // Current Camera Translation

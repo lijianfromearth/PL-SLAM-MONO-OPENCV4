@@ -161,7 +161,7 @@ public:
     // In the RGB-D case, RGB images can be distorted.
     std::vector<cv::KeyPoint> mvKeys, mvKeysRight;
     std::vector<cv::KeyPoint> mvKeysUn;
-
+    std::vector<cv::KeyPoint> mvKeysandLineUn;//存储特征点和特征线起始点坐标
     // Corresponding stereo coordinate and depth for each keypoint.
     // "Monocular" keypoints have a negative value.
     std::vector<float> mvuRight;
@@ -184,6 +184,7 @@ public:
     Mat mLdesc;
     vector<KeyLine> mvKeylinesUn;
     vector<Vector3d> mvKeyLineFunctions;    //特征线段所在直线的系数
+    vector<int> mvLine2point;  //存储特征线起始点在mvKeysandLineUn中的位置
     // 和KeyPoint类似，自己添加，标识特征线段是否属于外点
     vector<bool> mvbLineOutlier;
     std::vector<MapLine*> mvpMapLines;  //mvpMapLines与keylines相关联
